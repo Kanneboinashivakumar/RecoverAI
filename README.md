@@ -12,6 +12,41 @@
 
 ---
 
+## What the Evaluation Actually Found
+
+Most recovery systems claim their AI works. We ran a controlled experiment to check.
+
+We compared RecoverAI against a deliberately dumb, fixed-rule baseline
+(`IF payment_failed: retry_after_24h`, with zero access to customer
+history, ML probability, or expected value) — both evaluated on the
+identical synthetic batch, against the same hidden ground-truth outcome
+function, across multiple random seeds.
+
+**The honest result: RecoverAI's overall net incremental recovery varies
+by seed** — because roughly half of at-risk transaction value is
+correctly routed to human escalation rather than acted on automatically,
+and this simulation doesn't model a human resolving those tickets, so
+escalated value is conservatively uncredited. Meanwhile the baseline
+blindly retries *everything*, including high-risk transactions our
+guardrails correctly refuse to automate — occasionally winning by
+recklessness alone.
+
+**But on every transaction RecoverAI is confident enough to act on
+autonomously, it beat the baseline in every single seed we tested**,
+by margins from +₹172K to +₹349K on 1,000-transaction batches. That's
+not a cherry-picked run — it's the consistent pattern across every seed,
+reported alongside the overall (more conservative) number, not instead
+of it.
+
+We think this is a more honest and more interesting finding than a flat
+"our AI recovers more money" claim: **it demonstrates that knowing when
+not to automate is itself the intelligent behavior**, showing up
+quantitatively, not just as a design principle we assert.
+
+Full methodology and per-seed breakdown: see `FINDINGS.md`.
+
+---
+
 ## Live Deployment & Hosted Link
 
 - **Live Dashboard**: [https://recoverai-frontend.onrender.com](https://recoverai-frontend.onrender.com) *(Render Blueprint)*
@@ -24,7 +59,7 @@
 
 ### 1. Clone & Launch
 ```bash
-git clone https://github.com/your-org/RecoverAI.git
+git clone https://github.com/Kanneboinashivakumar/RecoverAI.git
 cd RecoverAI
 
 # Copy environment template (no secrets required for local demo)
@@ -102,6 +137,36 @@ docker compose up --build
 
 ---
 
+## Why This Isn't Just Another LLM Wrapper
+
+- **The LLM never controls money — we can prove it, not just claim it.**
+  Every Action Contract the LLM proposes is independently re-verified: its
+  stated `confidence` and `expected_value` are recomputed against the
+  authoritative EV Engine before any Policy check runs. During
+  development, we caught a real case where the LLM's stated expected
+  value omitted an action's operational cost — overstating the true
+  value by exactly that cost. Our reconciliation step caught and
+  corrected it automatically. Both the LLM's original claim and the
+  corrected value are stored, so this is auditable in the product itself
+  (see any Transaction Detail page → "Backend Verification" panel), not
+  just described here.
+- **We show what we didn't do, not just what we did.** The Recovery
+  Queue and every blocked/escalated Decision Receipt show cases where
+  RecoverAI deliberately declined to act automatically, with the exact
+  policy reason code — a system that tries to recover every rupee isn't
+  intelligent; one that knows when not to try is.
+- **Every ₹ figure is labeled as simulated, on every screen that shows
+  one.** We don't have real Razorpay production data, so we don't imply
+  we do. Every number is reproducible from a stated seed — change the
+  seed, get a different but internally consistent result.
+- **The LLM is used only where it adds value.** Deterministic Python
+  handles amounts, retry/contact limits, and all policy authorization.
+  ML handles probability estimation. The LLM is reserved for genuinely
+  ambiguous failure diagnosis and customer-facing messaging — never for
+  financial decisions.
+
+---
+
 ## Automated Verification
 
 The repository includes standalone Playwright verification suites to prove end-to-end functionality:
@@ -141,7 +206,7 @@ node verify_backend_failure.cjs
 ## Deploying to Render via Blueprint
 
 The repository includes a ready-to-deploy [`render.yaml`](render.yaml) blueprint:
-1. Fork or push this repository to GitHub.
+1. Fork or push this repository to GitHub: `https://github.com/Kanneboinashivakumar/RecoverAI`.
 2. Log in to [Render](https://dashboard.render.com).
 3. Click **New +** $\to$ **Blueprint**.
 4. Connect your repository. Render will automatically configure:
