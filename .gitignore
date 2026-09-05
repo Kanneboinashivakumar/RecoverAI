@@ -49,3 +49,15 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Internal build process docs & local artifacts (local only, do not push to GitHub)
+00-START-HERE.md
+01-GROUND-TRUTH.md
+02-DESIGN-SYSTEM.md
+03-PROGRESS-TRACKER.md
+[0-1][0-9]-*.md
+docs/internal-build-process/
+WALKTHROUGH.md
+WALKTHROUGH.html
+*.html
+
