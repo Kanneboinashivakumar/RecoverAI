@@ -78,7 +78,7 @@ Unlike generic AI agent submissions that wrap an LLM prompt around an API call a
 │                                           │                                              │
 │  ┌────────────────────────────────────────▼───────────────────────────────────────────┐  │
 │  │ Core Pipeline Engines:                                                             │  │
-│  │   1. Event Normalizer    2. Risk Engine (Isolation Forest)                         │  │
+│  │   1. Event Normalizer    2. Risk Engine (Deterministic Scoring)                    │  │
 │  │   3. Diagnosis Engine    4. ML Probability Engine (Gradient Boosting)              │  │
 │  │   5. Econometric EV      6. Action Contract Reconciler                             │  │
 │  │   7. Policy Engine       8. Mock Action Dispatcher                                 │  │
@@ -99,7 +99,7 @@ Unlike generic AI agent submissions that wrap an LLM prompt around an API call a
 [ Payment Failure Event ]
             │
             ▼
-  1. Risk Scoring (Isolation Forest ML Anomaly Detection)
+  1. Risk Scoring (Deterministic Multi-Factor Scoring)
             │
             ▼
   2. Deterministic Rule-Based Diagnosis (Failure codes & taxonomy)
@@ -163,7 +163,7 @@ backend/
 │   │   ├── expected_value.py     # Authoritative econometric EV calculation
 │   │   ├── policy.py             # 6 deterministic policy guardrails
 │   │   ├── prediction.py         # ML recovery probability inference
-│   │   ├── risk.py               # Isolation Forest anomaly scoring
+│   │   ├── risk.py               # Deterministic multi-factor risk scoring
 │   │   └── verification.py       # Outcome verification against hidden simulator
 │   ├── integrations/             # Mock gateways & external dispatchers
 │   │   ├── messaging.py          # Mock WhatsApp, Email, Escalation dispatch
@@ -232,7 +232,12 @@ RecoverAI strictly adheres to the 13 core database tables defined in Ground Trut
 Ingests heterogeneous payment gateway payloads into a standardized `NormalizedEvent` schema. Strips malformed headers, validates ISO currency codes (`INR`), maps gateway-specific error codes into the standardized 27-code failure taxonomy, and checks the database to deduplicate events.
 
 ### 2. Risk Detection Engine
-Computes an instantaneous risk profile using an Isolation Forest anomaly detector combined with rule-based heuristics. Evaluates failure velocity, transaction amount variance, and customer lifetime failure ratios, emitting a `severity_score` (0.0 to 1.0) and assigning a `risk_level` (`LOW`, `MEDIUM`, `HIGH`).
+Computes an instantaneous risk profile using a deterministic weighted scoring formula without any random, ML, or LLM dependency. Evaluates:
+1. **Monetary Value at Risk** (40% weight): Non-linear curve scaled by transaction size (low, moderate, high thresholds).
+2. **Customer History Score** (30% weight): Track record based on customer lifetime failure rate.
+3. **Failure Severity Score** (30% weight): Taxonomy weight based on failure code (e.g. 95 for hard revocation vs 20 for transient timeout).
+
+Emits a deterministic `severity_score` (0.0 to 100.0) and assigns a `risk_level` (`LOW`, `MEDIUM`, `HIGH`, or `CRITICAL`).
 
 ### 3. Diagnosis Engine (Deterministic + LLM Split)
 Implements a 2-tier diagnosis architecture:
@@ -250,9 +255,9 @@ Evaluates every allowable recovery action under the econometric expected value f
 $$\text{EV} = P(\text{recovery}) \times \text{Transaction Value} - \text{Operational Cost}$$
 Applies distinct operational costs:
 - `RETRY`: ₹1.00 (Gateway API charge)
-- `WHATSAPP`: ₹2.50 (Template message cost)
-- `EMAIL`: ₹0.20 (SMTP notification cost)
-- `DISCOUNT`: 10% voucher margin haircut + ₹2.50 messaging cost
+- `WHATSAPP`: ₹1.50 (WhatsApp Business API per-template message)
+- `EMAIL`: ₹0.20 (Transactional email delivery cost)
+- `DISCOUNT`: 10% voucher margin haircut (proportional to transaction size: `amount * 0.10`)
 - `ESCALATE`: ₹25.00 (Human agent ticket handling cost)
 
 ### 6. LLM Recommendation & Action Contract Reconciler
@@ -325,7 +330,7 @@ Below is an exact trace executed during Phase 8 verification on failed transacti
 | **Monetary Value** | ₹1,753.45 (`INR`) | Authoritative DB Record |
 | **Failure Code** | `BANK_DECLINED` (Netbanking/UPI) | Event Normalizer |
 | **Customer Profile** | Account age 1,688 days, 12 lifetime txs (11 ok, 1 failed; 8.3% failure rate) | Customer Record |
-| **Risk Score** | `0.15` (Severity Score) $\to$ `LOW` Risk Level | Risk Engine (Isolation Forest) |
+| **Risk Score** | `0.15` (Severity Score) $\to$ `LOW` Risk Level | Risk Engine (Deterministic Multi-Factor Scoring) |
 | **Diagnosis** | `BANK_DECLINED` (1.0 confidence, `BANK_INTERNAL_POLICY_REJECTION`) | Deterministic Diagnosis |
 | **ML Probability** | `17.5%` recovery probability (`CALIBRATED_ML_ESTIMATION`) | Gradient Boosting ML Model |
 | **Candidate Action** | `RETRY` via Netbanking switch after 1 hour delay | LLM Recommendation |
@@ -467,7 +472,7 @@ Operational workspace for compliance and customer operations teams. Displays all
 ### 5. Agent Replay (`/agent-replay/:id`)
 Forensic vertical timeline reconstructing the full 8-step decisioning lifecycle directly from the append-only `audit_events` ledger:
 1. `EVENT_RECEIVED` (Event Normalizer)
-2. `RISK_SCORED` (Isolation Forest)
+2. `RISK_SCORED` (Deterministic Multi-Factor Scoring)
 3. `DIAGNOSIS_COMPLETED` (Diagnosis Engine)
 4. `PROBABILITY_PREDICTED` (Calibrated ML)
 5. `DECISION_RECOMMENDED` (LLM Recommendation)
@@ -598,14 +603,14 @@ RecoverAI was built across 13 strict phases, with every phase verified against e
 | :---: | :--- | :--- | :--- |
 | **1** | Project Scaffold & Database | Alembic migrations & Docker Compose | PostgreSQL 16 launched; all 13 core tables created; `GET /health` verified 200 OK. |
 | **2** | Synthetic Generator & Simulator | Batch generation with hidden simulator | Seed 42 generated 1,000 transactions (data hash: `916aa537963d2bf7`); 135 failures generated. |
-| **3** | Event Normalizer & Risk Engine | Normalization & Isolation Forest | Unique constraint prevented duplicate events; Isolation Forest anomaly scoring verified. |
+| **3** | Event Normalizer & Risk Engine | Normalization & Multi-Factor Scoring | Unique constraint prevented duplicate events; deterministic multi-factor risk scoring verified across 3 dimensions. |
 | **4** | 2-Tier Diagnosis Engine | 100-event mixed batch test | 85 clear taxonomy codes resolved deterministically in <1ms; 15 ambiguous cases diagnosed via LLM. |
 | **5** | Recovery ML Model & EV Engine | Train/validation/test split evaluation | Model achieved **ROC-AUC: 0.7848**, **Brier Score: 0.1003**; EV formula $P \times V - C$ verified. |
 | **6** | LLM Recommendation Contract | Pydantic schema validation & reconciliation | Gemini emitted valid `RecoveryAction` contracts; backend caught and corrected LLM cost omissions. |
 | **7** | Deterministic Policy Engine | Unit testing across 5 guardrails | Amount tier escalations, retry limits, contact frequency, discount caps, and idempotency verified. |
 | **8** | Action Executor & Replay | End-to-end execution & simulator check | ₹1,753.45 `BANK_DECLINED` transaction executed across 8 stages; full Agent Replay reconstructed. |
 | **Vertical Slice** | Integrated Pipeline Verification | Zero-skip end-to-end pipeline test | Transaction traversed event ingestion, scoring, diagnosis, EV, policy, execution, and audit logging. |
-| **9** | Baseline vs RecoverAI Evaluation | A/B simulation on 500-tx batch (`seed=42`) | RecoverAI achieved **+₹5,126.03** net incremental lift; autonomous cohort delivered **+₹37,881.09**. |
+| **9** | Baseline vs RecoverAI Evaluation | A/B simulation on 500-tx batch (`seed=42`) | RecoverAI achieved **+₹5,126.03** net incremental lift overall (Autonomous cohort delivered **+₹37,881.09** net lift across 269 transactions; 231 high-value/low-confidence cases safely routed to human review). |
 | **10** | Recovery Queue & Uniform DB Replay | Queue segregation & persistence test | 231 escalated and 25 blocked items populated queue; human resolution modals tested. |
 | **11** | India-Specific Regulatory Depth | NPCI AutoPay state machine & Guardrail 6 | Revoked mandates blocked; 24h cooling-off window enforced; 3 contextual Hinglish messages generated. |
 | **12** | SPA Dashboard (7 Views) | Playwright click-through & error tests | All 7 views verified in single session (21.03s); frontend loudly fails when backend disconnects. |

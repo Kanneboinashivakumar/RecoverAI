@@ -451,7 +451,7 @@ def evaluate_recoverai_policy(
                 actor="risk_engine",
                 input_snapshot={"amount": float(item["amount"]), "lifetime_tx": item["lifetime_tx_count"]},
                 output_snapshot={"severity_score": severity, "risk_level": risk_lvl},
-                reason_codes=["ISOLATION_FOREST_ANOMALY" if severity > 0.5 else "ISOLATION_FOREST_NORMAL"],
+                reason_codes=["DETERMINISTIC_RISK_HIGH" if severity > 0.5 else "DETERMINISTIC_RISK_NORMAL"],
                 db=session,
             )
 
